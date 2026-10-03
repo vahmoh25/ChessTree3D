@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Engine tests</title>
+<pre id="out">running...</pre>
+<script src="../src/chess.js"></script>
+<script src="../src/eval.js"></script>
+<script src="../src/search.js"></script>
+<script>
+const out = document.getElementById('out');
+const log = s => { out.textContent += '\n' + s; };
+out.textContent = '';
+const cases = [
+  ['start d4', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 4, 197281],
+  ['kiwipete d3', 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1', 3, 97862],
+  ['pos3 d4', '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1', 4, 43238],
+  ['pos4 d3', 'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1', 3, 9467],
+  ['pos5 d3', 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8', 3, 62379],
+];
+let ok = true;
+for (const [name, fen, d, exp] of cases) {
+  const t = performance.now();
+  const p = new CH.Position().load(fen);
+  const n = p.perft(d);
+  const same = p.toFEN().split(' ').slice(0, 4).join(' ') === fen.split(' ').slice(0, 4).join(' ');
+  log(`${name}: ${n} (expected ${exp}) ${n === exp ? 'OK' : 'FAIL'} fenRestored=${same} ${(performance.now() - t) | 0}ms`);
+  if (n !== exp || !same) ok = false;
+}
+// search test
+function runSearch(fen, depth, prune, tree) {
+  const s = new SR.Search(new CH.Position().load(fen), { depth, treeDepth: tree, prune, order: true });
+  const t = performance.now(); let steps = 0;
+  while (s.step()) steps++;
+  return { s, ms: (performance.now() - t) | 0, steps };
+}
+for (const d of [2, 3, 4]) {
+  const r = runSearch(CH.START_FEN, d, true, 3);
+  log(`search d${d} prune: nodes=${r.s.nodes} q=${r.s.qnodes} cut=${r.s.cutoffs} pruned=${r.s.pruned} tree=${r.s.list.length} val=${r.s.value} best=${CH.uci(r.s.bestMove)} ${r.ms}ms steps=${r.steps}`);
+}
+const r3 = runSearch(CH.START_FEN, 3, false, 3);
+log(`search d3 NO prune: nodes=${r3.s.nodes} tree=${r3.s.list.length} val=${r3.s.value} ${r3.ms}ms`);
+// mate in 1 test: back-rank
+const m = runSearch('6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', 2, true, 2);
+log('mate-in-1 best=' + CH.uci(m.s.bestMove) + ' val=' + m.s.value + ' (expect a1a8, 29999)');
+// eval symmetry
+const e1 = EV.evaluate(new CH.Position().load(CH.START_FEN));
+log('eval(start)=' + e1);
+// SAN / game / draw tests
+const g = new CH.Game();
+for (const u of ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'g8f6', 'e1g1']) {
+  const mv = g.legal().find(x => CH.uci(x) === u);
+  if (!mv) { log('illegal ' + u); ok = false; break; }
+  g.play(mv);
+}
+log('SAN: ' + g.records.map(r => r.san).join(' ') + ' | ' + g.pos.toFEN());
+const sm = new CH.Game(); sm.reset('rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3');
+log('fool mate status: ' + JSON.stringify(sm.status()));
+const st = new CH.Game(); st.reset('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1');
+log('stalemate status: ' + JSON.stringify(st.status()));
+log(ok ? 'ALL OK' : 'SOME FAILED');
+document.title = ok ? 'PASS' : 'FAIL';
+</script>

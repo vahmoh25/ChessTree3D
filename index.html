@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chess Tree 3D — watch an AI think</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><span class="logo">&#9822;</span><div><b>Chess&nbsp;Tree&nbsp;3D</b><small>minimax + alpha-beta, visualised</small></div></div>
+  <div class="ctl">
+    <label>Mode
+      <select id="mode">
+        <option value="hw">You (White) vs AI</option>
+        <option value="hb">You (Black) vs AI</option>
+        <option value="aa">AI vs AI</option>
+      </select>
+    </label>
+    <label>Difficulty
+      <select id="depth">
+        <option value="1">1 · Beginner</option>
+        <option value="2">2 · Casual</option>
+        <option value="3" selected>3 · Club</option>
+        <option value="4">4 · Strong</option>
+        <option value="5">5 · Expert</option>
+        <option value="6">6 · Master (slow)</option>
+      </select>
+    </label>
+    <button id="btnNew" title="Start a new game (N)">New game</button>
+    <button id="btnUndo" title="Take back your last move (U)">Undo</button>
+    <button id="btnPause" class="primary" title="Pause / resume the AI (Space)">Pause</button>
+    <button id="btnStep" title="Advance the paused search by one node">Step</button>
+    <button id="btnHint" title="Let the AI analyse your position and suggest a move">Hint</button>
+  </div>
+</header>
+
+<main id="stage">
+  <section id="boardPane" class="pane">
+    <div id="boardGL" class="gl-host"></div>
+    <div id="evalBar" title="Static evaluation of the position on the board"><div class="fill"></div><span id="evalNum">0.00</span></div>
+    <div class="overlay tl">
+      <div id="turnPill" class="pill"><i class="dot"></i><span id="turnText">White to move</span></div>
+      <div id="statusLine" class="note"></div>
+    </div>
+    <div class="overlay bl">
+      <div class="captured"><span class="who">White took</span><span id="capByWhite"></span></div>
+      <div class="captured"><span class="who">Black took</span><span id="capByBlack"></span></div>
+    </div>
+    <div class="overlay tr tools">
+      <button id="btnFlip" class="mini" title="View from the other side">&#8635; Flip</button>
+    </div>
+    <div id="banner" class="banner hidden"><h2 id="bannerTitle"></h2><p id="bannerText"></p><button id="bannerBtn" class="primary">Play again</button></div>
+    <div id="promo" class="banner hidden promo"><h3>Promote to</h3><div id="promoBtns"></div></div>
+  </section>
+
+  <section id="treePane" class="pane">
+    <div id="treeGL" class="gl-host"></div>
+    <div class="overlay tl hud" id="hud">
+      <div class="hudTitle"><span id="hudState" class="chip idle">idle</span><span id="hudPlayer">Search tree</span></div>
+      <div class="grid4">
+        <div><small>Depth</small><b id="stDepth">–</b></div>
+        <div><small>Positions</small><b id="stNodes">0</b></div>
+        <div class="red"><small>Branches cut</small><b id="stPruned">0</b></div>
+        <div><small>Cutoffs</small><b id="stCuts">0</b></div>
+        <div><small>Thinking</small><b id="stTime">0.0s</b></div>
+        <div><small>Tree nodes</small><b id="stTree">0</b></div>
+        <div><small>Speed</small><b id="stNps">–</b></div>
+        <div class="green"><small>Best value</small><b id="stBest">–</b></div>
+      </div>
+    </div>
+    <div class="overlay tr tools">
+      <button id="btnFit" class="mini" title="Frame the whole tree (F)">&#9974; Fit</button>
+      <button id="btnAuto" class="mini" title="Slowly orbit the tree">&#10227; Orbit</button>
+      <button id="btnLabels" class="mini" title="Cycle node labels">Labels: moves</button>
+    </div>
+    <div class="overlay bl legend" id="legend">
+      <div class="legTitle">Legend <small>drag = rotate · right-drag = pan · wheel = zoom · click = inspect</small></div>
+      <div class="legRow">
+        <span><i class="sw sphere"></i> MAX node (White to move)</span>
+        <span><i class="sw diamond"></i> MIN node (Black to move)</span>
+        <span><i class="sw" style="background:linear-gradient(90deg,#b35cff,#c9d1e0,#35c8ff)"></i> value: Black &larr; &rarr; White</span>
+      </div>
+      <div class="legRow">
+        <span><i class="sw" style="background:#fff2a0"></i> evaluating now</span>
+        <span><i class="sw" style="background:#ffb020"></i> on current path</span>
+        <span><i class="sw" style="background:#ff3d55"></i> pruned (dashed)</span>
+        <span><i class="sw ring"></i> cutoff</span>
+        <span><i class="sw" style="background:#2fd9c0"></i> minimax choice</span>
+        <span><i class="sw" style="background:#3dff94"></i> best line</span>
+      </div>
+      <div class="legRow"><span>Node size = positions searched beneath it</span></div>
+    </div>
+    <div id="tip" class="tip hidden"></div>
+  </section>
+
+  <aside id="side">
+    <details open class="card" id="cardAB">
+      <summary>&alpha;&ndash;&beta; window <small id="abWho"></small></summary>
+      <div id="abGauge" class="gauge">
+        <div class="track"><div class="win"></div><i class="mk a"></i><i class="mk b"></i><i class="mk v"></i></div>
+        <div class="scale"><span>&minus;5</span><span>0</span><span>+5</span></div>
+      </div>
+      <div id="abPath" class="path"></div>
+      <p class="hint">At every node <b>&alpha;</b> is the best score <span class="c">White</span> can already guarantee elsewhere and <b>&beta;</b> the best <span class="v">Black</span> can guarantee. When <b>&alpha; &ge; &beta;</b> the rest of that node's moves can never be chosen &mdash; they are pruned.</p>
+    </details>
+
+    <details open class="card" id="cardCand">
+      <summary>Candidate moves <small>root of the search</small></summary>
+      <table id="cand"><tbody></tbody></table>
+    </details>
+
+    <details open class="card" id="cardNode">
+      <summary>Inspector <small id="inspWho">game position</small></summary>
+      <div id="insp"></div>
+    </details>
+
+    <details class="card" id="cardSet">
+      <summary>Search &amp; display settings</summary>
+      <div class="set">
+        <label>Visualisation speed <input id="speed" type="range" min="1" max="7" value="5"><output id="speedOut"></output></label>
+        <label>Tree detail
+          <select id="treeDepth"><option value="2">2 plies</option><option value="3" selected>3 plies</option><option value="4">4 plies (large)</option></select>
+        </label>
+        <label class="chk"><input id="optPrune" type="checkbox" checked> Alpha-beta pruning <small>(off = plain minimax, depth &le; 3)</small></label>
+        <label class="chk"><input id="optOrder" type="checkbox" checked> Move ordering <small>(captures first)</small></label>
+        <label class="chk"><input id="optAB" type="checkbox" checked> Show &alpha;/&beta; on nodes</label>
+        <label class="chk"><input id="optRings" type="checkbox" checked> Ply guide rings</label>
+        <label class="chk"><input id="optArrows" type="checkbox" checked> Draw examined line on board</label>
+      </div>
+    </details>
+
+    <details open class="card" id="cardLog">
+      <summary>Search log</summary>
+      <div id="log" class="log"></div>
+    </details>
+
+    <details open class="card" id="cardHist">
+      <summary>Move history <small id="histCount"></small></summary>
+      <div id="hist" class="hist"></div>
+    </details>
+  </aside>
+</main>
+
+<script src="vendor/three.min.js"></script>
+<script src="src/chess.js"></script>
+<script src="src/eval.js"></script>
+<script src="src/search.js"></script>
+<script src="src/orbit.js"></script>
+<script src="src/pieces.js"></script>
+<script src="src/board3d.js"></script>
+<script src="src/tree3d.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>
